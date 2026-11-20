@@ -1,0 +1,63 @@
+name: Build and Update Helm Chart
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-update:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: ghcr.io/popovnx/khai-argo-app
+    steps:
+      - name: Checkout app repo
+        uses: actions/checkout@v4
+
+      - name: Compute version tag
+        id: meta
+        run: |
+          TAG="0.1.${GITHUB_RUN_NUMBER}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Building version ${TAG}"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_NAME }}:latest
+
+      - name: Checkout Helm charts repo
+        uses: actions/checkout@v4
+        with:
+          repository: PopovNx/khai-argo-charts
+          ssh-key: ${{ secrets.CHARTS_DEPLOY_KEY }}
+          path: charts-repo
+
+      - name: Update Helm chart values and version
+        run: |
+          cd charts-repo
+          TAG="${{ steps.meta.outputs.tag }}"
+          sed -i "s/^  tag: .*/  tag: \"${TAG}\"/" charts/khai-argo-app/values.yaml
+          sed -i "s/^version: .*/version: ${TAG}/" charts/khai-argo-app/Chart.yaml
+          sed -i "s/^appVersion: .*/appVersion: \"${TAG}\"/" charts/khai-argo-app/Chart.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add charts/khai-argo-app/values.yaml charts/khai-argo-app/Chart.yaml
+          git diff --cached --quiet || git commit -m "chore(chart): bump khai-argo-app to ${TAG}"
+          git push origin main
