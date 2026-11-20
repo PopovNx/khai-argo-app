@@ -6,7 +6,7 @@ import (
 	"lab-argo-app/web/handlers"
 )
 
-const AppVersion = "1.0.0"
+const AppVersion = "1.0.1"
 
 func ScheduleRouter(app fiber.Router, service schedule.Service) {
 	app.Get("/", handlers.GetSchedule(service))
